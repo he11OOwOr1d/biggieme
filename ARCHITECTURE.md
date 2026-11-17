@@ -97,3 +97,15 @@ Local measurement on 15 November 2026 (`npm run bench`, Node 25.9.0 on the devel
 The app is runnable with `npm install` and `npm run dev`. Use a persistent volume and one Node process. Signed random browser IDs scope records and endpoint access; they are not identity accounts. Cookies should be HTTPS-protected at deployment. The shared access gate and concurrency limits are demo controls, not rate limiting, per-user billing, recovery, or a complete production security layer. Multiple app instances, public self-service registration, user-supplied provider keys, durable queues, and encrypted secret storage are not implemented.
 
 No API keys were available during implementation. Mocked tests validate control flow, persistence and provider-independent contracts; they do not establish Luna/Claude tool quality, production API compatibility, search quality, or real latency. Before submission, run live tests on the selected provider and Tavily, including the three challenge questions, unavailable sources, deliberate old-answer errors and ambiguity. Do not submit mock output as live evidence.
+
+## Vercel hosting mode (17 November 2026)
+
+Local mode retains the single SQLite database and file projections described above.
+Vercel mode uses `api/index.ts`, Node 24, and one private Blob SQLite snapshot per
+signed user. Each request reloads from private storage without a stale read cache;
+mutations checkpoint and save with an ETag precondition. Conflicting updates fail
+rather than overwrite another request. `SESSION_SECRET` is stable across instances.
+Hosted extraction is awaited before saving and emitting the terminal completion,
+so it does not rely on an in-memory background queue after a function response.
+Snapshots are designed for this small demo, not high-volume production traffic.
+The deployed API and storage use Mumbai. Existing local histories are not uploaded.
