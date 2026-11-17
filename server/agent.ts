@@ -1,5 +1,6 @@
 import { ToolLoopAgent, isStepCount, generateText, Output, type LanguageModel, type ModelMessage } from 'ai';
 import { z } from 'zod';
+import { groqResearch } from './groq-research.ts';
 import { Store, type Source } from './store.ts';
 import { timeContext } from './time.ts';
 import { SearchService } from './search.ts';
@@ -48,43 +49,43 @@ export async function runChat(options: {
   const asksForFreshness = /\b(changed?|pricing|prices?|latest|current|news)\b|still (correct|accurate|true)/i.test(text);
   const needsHistoricalBaseline = /\b(we|our|last|shortlisted)\b|\bI asked\b|what did I/i.test(text);
   const hasBaseline = memory.messages.length > 0 || recent.some(m => m.id !== userId);
-  const agent = new ToolLoopAgent({
-    model, instructions: instructions + (groq && asksForFreshness ? '\nThis request needs fresh web evidence. Call web_search before answering; if search fails, disclose that verification failed.' : ''), tools: { web_search: options.search.makeTool(known, found => {
-      for (const source of found) sources.set(`${source.url}:${source.kind}`, source);
-      emit({ type: 'sources', sources: [...sources.values()] });
-    }, status => emit({ type: 'status', text: status }), signal, asksForFreshness, groq) },
+  const webTool = options.search.makeTool(known, found => {
+    for (const source of found) sources.set(`${source.url}:${source.kind}`, source);
+    emit({ type: 'sources', sources: [...sources.values()] });
+  }, status => emit({ type: 'status', text: status }), signal, asksForFreshness, groq);
+  const agent = groq ? undefined : new ToolLoopAgent({
+    model, instructions, tools: { web_search: webTool },
     stopWhen: isStepCount(5), maxRetries: 1, maxOutputTokens: 2400,
-    onError: () => { /* Handled below; provider payloads must not leak into logs. */ },
+    onError: () => { /* The request handler logs safe diagnostic metadata. */ },
     providerOptions: options.model ? undefined : providerOptions(options.provider),
-    prepareStep: ({ stepNumber, messages }) => {
-      // Groq rejects reasoning_content replayed by the generic compatible adapter.
-      const context = groq ? { messages: messages.map(message =>
-        message.role === 'assistant' && Array.isArray(message.content)
-          ? { ...message, content: message.content.filter(part => part.type !== 'reasoning') }
-          : message) } : {};
-      if (stepNumber === 4) return { ...context, activeTools: [], toolChoice: 'none' as const };
-      if ((stepNumber === 0 || (groq && sources.size === 0)) && asksForFreshness && (!needsHistoricalBaseline || hasBaseline)) {
-        // Only one tool is available. Groq's SDK-validated mode supports
-        // required/none, not a named tool choice. Keep requiring search after
-        // invalid calls until evidence arrives or the final synthesis step.
-        return { ...context, toolChoice: 'required' as const };
-      }
-      return context;
+    prepareStep: ({ stepNumber }) => {
+      if (stepNumber === 4) return { activeTools: [], toolChoice: 'none' as const };
+      if (stepNumber === 0 && asksForFreshness && (!needsHistoricalBaseline || hasBaseline)) return { toolChoice: 'required' as const };
+      return {};
     },
   });
   try {
-    const stream = await agent.stream({ messages, abortSignal: signal });
-    for await (const part of stream.fullStream) {
-      if (part.type === 'text-delta') {
-        firstTokenMs ??= performance.now() - started;
-        textOut += part.text; emit({ type: 'text', text: part.text });
-      } else if (part.type === 'finish') finishReason = part.finishReason;
-      else if (part.type === 'error') throw part.error;
+    let usage: { inputTokens?: number; outputTokens?: number };
+    if (groq) {
+      usage = await groqResearch({ model, messages, instructions, signal, providerOptions: providerOptions(options.provider), needsFreshSearch: asksForFreshness && (!needsHistoricalBaseline || hasBaseline), known,
+        execute: async input => await webTool.execute!(input, { toolCallId: 'planned-search', messages, abortSignal: signal, context: {} }),
+        onText: text => { firstTokenMs ??= performance.now() - started; textOut += text; emit({ type: 'text', text }); },
+      });
+      finishReason = 'stop';
+    } else {
+      const stream = await agent!.stream({ messages, abortSignal: signal });
+      for await (const part of stream.fullStream) {
+        if (part.type === 'text-delta') {
+          firstTokenMs ??= performance.now() - started;
+          textOut += part.text; emit({ type: 'text', text: part.text });
+        } else if (part.type === 'finish') finishReason = part.finishReason;
+        else if (part.type === 'error') throw part.error;
+      }
+      usage = await stream.totalUsage;
     }
     if (signal.aborted) throw new Error('Response stopped');
     if (finishReason !== 'stop' || !textOut.trim()) throw Object.assign(new Error(finishReason === 'length' ? 'Response reached its length limit. Please narrow the question.' : 'The model did not complete its response.'), { name: 'IncompleteResponseError', finishReason });
     const assistantId = store.add(user, session, 'assistant', textOut, 'complete', [...sources.values()]);
-    const usage = await stream.totalUsage;
     const metrics = { retrievalMs: Math.round(retrievalMs), firstTokenMs: Math.round(firstTokenMs || 0), totalMs: Math.round(performance.now() - started), inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
     emit({ type: 'done', id: assistantId, userId, metrics });
     return { userId, text: textOut, metrics };

@@ -44,7 +44,7 @@ test('low reasoning effort is scoped to Groq GPT-OSS, leaving other compatible p
   try {
     process.env.COMPATIBLE_BASE_URL = 'https://api.groq.com/openai/v1';
     process.env.COMPATIBLE_MODEL = 'openai/gpt-oss-120b';
-    assert.deepEqual(providerOptions('compatible'), { compatible: { reasoningEffort: 'low', disable_tool_validation: true } });
+    assert.deepEqual(providerOptions('compatible'), { compatible: { reasoningEffort: 'low' } });
     process.env.COMPATIBLE_MODEL = 'other-model';
     assert.equal(providerOptions('compatible'), undefined);
     process.env.COMPATIBLE_MODEL = 'openai/gpt-oss-120b';

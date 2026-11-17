@@ -117,3 +117,7 @@ hosted completion event and snapshot save so it cannot be lost when a function
 freezes. This small-demo approach copies the user's database per request; it is
 not designed for large histories or high traffic. Use a managed database for that
 scale. Existing local conversations are not automatically uploaded.
+
+Groq uses a validated JSON research plan followed by a separate answer stream,
+rather than its unreliable native streaming tool-call protocol. The application
+still executes the same single search tool with bounded queries and page reads.

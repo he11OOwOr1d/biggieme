@@ -16,15 +16,18 @@ export function modelFor(id: ProviderId): LanguageModel {
   if (!config?.available) throw new Error(`Configure ${id} in .env before chatting.`);
   if (id === 'openai') return createOpenAI({ apiKey: process.env.OPENAI_API_KEY }).responses(config.model);
   if (id === 'anthropic') return createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })(config.model);
-  return createOpenAICompatible({ name: 'compatible', baseURL: process.env.COMPATIBLE_BASE_URL!, apiKey: process.env.COMPATIBLE_API_KEY || undefined }).chatModel(config.model);
+  return createOpenAICompatible({ name: 'compatible', baseURL: process.env.COMPATIBLE_BASE_URL!, supportsStructuredOutputs: new URL(process.env.COMPATIBLE_BASE_URL!).hostname === 'api.groq.com', apiKey: process.env.COMPATIBLE_API_KEY || undefined }).chatModel(config.model);
 }
 export function providerOptions(id: ProviderId): Record<string, Record<string, string | boolean | null>> | undefined {
   if (id === 'compatible' && process.env.COMPATIBLE_BASE_URL
     && new URL(process.env.COMPATIBLE_BASE_URL).hostname === 'api.groq.com'
+    && process.env.COMPATIBLE_MODEL === 'qwen/qwen3.8-27b') {
+    return { compatible: { reasoningEffort: 'none' } };
+  }
+  if (id === 'compatible' && process.env.COMPATIBLE_BASE_URL
+    && new URL(process.env.COMPATIBLE_BASE_URL).hostname === 'api.groq.com'
     && /^openai\/gpt-oss-(20b|120b)$/.test(process.env.COMPATIBLE_MODEL || '')) {
-    // Let the SDK reject invalid calls and return validation errors to the model.
-    // Groq-side validation otherwise terminates an already-started stream.
-    return { compatible: { reasoningEffort: 'low', disable_tool_validation: true } };
+    return { compatible: { reasoningEffort: 'low' } };
   }
   return id === 'openai' && /^gpt-6/.test(process.env.OPENAI_MODEL || 'gpt-6-luna')
     ? { openai: { reasoningEffort: 'low', reasoningSummary: null, store: false } } : undefined;

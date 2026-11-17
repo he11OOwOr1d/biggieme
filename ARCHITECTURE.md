@@ -109,3 +109,17 @@ Hosted extraction is awaited before saving and emitting the terminal completion,
 so it does not rely on an in-memory background queue after a function response.
 Snapshots are designed for this small demo, not high-volume production traffic.
 The deployed API and storage use Mumbai. Existing local histories are not uploaded.
+
+## Groq research execution (17 November 2026 update)
+
+Groq's streamed native function-calling path continued to reject generated calls
+in production despite strict schemas and disabled provider validation. Groq now
+uses a separate JSON research plan and text synthesis. No Groq request includes
+native tool definitions or tool choice. Application code validates the plan with
+`searchInput`, invokes the same `web_search` implementation, and may read up to
+three returned pages. The existing URL allowlist and nine-operation cap still
+apply. Required revalidation constrains the JSON plan action to search. An invalid
+JSON plan is retried once; no invalid plan executes. If planning cannot succeed,
+the answer must explicitly disclose missing verification. Other providers retain
+the SDK's native five-step tool loop. This adds a planning request to Groq's ordinary
+chat path in exchange for avoiding the failing native tool-call protocol.
