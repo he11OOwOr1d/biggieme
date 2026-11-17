@@ -22,7 +22,9 @@ export function providerOptions(id: ProviderId): Record<string, Record<string, s
   if (id === 'compatible' && process.env.COMPATIBLE_BASE_URL
     && new URL(process.env.COMPATIBLE_BASE_URL).hostname === 'api.groq.com'
     && /^openai\/gpt-oss-(20b|120b)$/.test(process.env.COMPATIBLE_MODEL || '')) {
-    return { compatible: { reasoningEffort: 'low' } };
+    // Let the SDK reject invalid calls and return validation errors to the model.
+    // Groq-side validation otherwise terminates an already-started stream.
+    return { compatible: { reasoningEffort: 'low', disable_tool_validation: true } };
   }
   return id === 'openai' && /^gpt-6/.test(process.env.OPENAI_MODEL || 'gpt-6-luna')
     ? { openai: { reasoningEffort: 'low', reasoningSummary: null, store: false } } : undefined;

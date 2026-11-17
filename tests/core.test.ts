@@ -198,3 +198,37 @@ test('retrying a broad reference does not use the previous missing-history reply
   assert.equal(r.baselineSession, original.id);
   assert.ok(r.messages.some(m => m.content.includes('Postgres')));
 });
+
+test('invalid search arguments and unknown tools never execute and can recover within the existing loop', async t => {
+  const s = fixture(t); const chat = s.create('alice'); let calls = 0; let searches = 0;
+  const model = new MockLanguageModelV4({ doStream: async params => {
+    calls++;
+    if (calls === 1) return stream([{ type: 'tool-call', toolCallId: 'bad-1', toolName: 'web_search', input: JSON.stringify({ queries: 'not an array', maxItems: 3 }) }, { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage }]);
+    if (calls === 2) {
+      assert.equal(searches, 0); assert.match(JSON.stringify(params.prompt), /error|validation/i);
+      return stream([{ type: 'tool-call', toolCallId: 'bad-2', toolName: 'invented_tool', input: '{}' }, { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage }]);
+    }
+    if (calls === 3) {
+      assert.equal(searches, 0);
+      return stream([{ type: 'tool-call', toolCallId: 'good', toolName: 'web_search', input: JSON.stringify({ queries: ['SQLite official releases'], urls: [], fresh: true }) }, { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage }]);
+    }
+    assert.equal(searches, 1); assert.match(JSON.stringify(params.prompt), /SQLite release/);
+    return stream([{ type: 'text-start', id: 'a' }, { type: 'text-delta', id: 'a', delta: 'I checked the SQLite release page.' }, { type: 'text-end', id: 'a' }, { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage }]);
+  } });
+  const search = new SearchService('fixture', async () => { searches++; return Response.json({ results: [{ url: 'https://sqlite.org/changes.html', title: 'SQLite releases', content: 'SQLite release information' }] }); });
+  const result = await runChat({ store: s, search, user: 'alice', session: chat.id, text: 'Check SQLite releases', provider: 'compatible', model, timezone: 'UTC', signal: new AbortController().signal, emit: () => {} });
+  assert.equal(calls, 4); assert.equal(searches, 1); assert.match(result.text, /checked/);
+  assert.equal(s.messages('alice', chat.id).at(-1)?.status, 'complete');
+});
+
+test('repeated invalid calls stop at the bounded synthesis step without executing search', async t => {
+  const s = fixture(t); const chat = s.create('alice'); let calls = 0; let searches = 0;
+  const model = new MockLanguageModelV4({ doStream: async params => {
+    calls++;
+    if (calls < 5) return stream([{ type: 'tool-call', toolCallId: `bad-${calls}`, toolName: 'web_search', input: '{}' }, { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage }]);
+    assert.ok(!params.tools?.length, 'Final synthesis must not expose executable tools');
+    return stream([{ type: 'text-start', id: 'a' }, { type: 'text-delta', id: 'a', delta: 'I could not verify current changes because the search requests failed.' }, { type: 'text-end', id: 'a' }, { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage }]);
+  } });
+  const result = await runChat({ store: s, search: new SearchService('fixture', async () => { searches++; return Response.json({}); }), user: 'alice', session: chat.id, text: 'Check for updates', provider: 'compatible', model, timezone: 'UTC', signal: new AbortController().signal, emit: () => {} });
+  assert.equal(calls, 5); assert.equal(searches, 0); assert.match(result.text, /could not verify/);
+});

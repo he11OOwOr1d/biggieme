@@ -7,7 +7,7 @@ Checked 17 November 2026. Project: minimi.
 **PASS for the configured Groq + Tavily endpoint/integration suite.**
 
 - `npm run build`: TypeScript check and production frontend build pass.
-- `npm test`: all 23 automated tests pass, including strict Groq tool serialization, forced named tool choice, URL-read protection, memory provenance/deletion, streaming, and ownership checks.
+- `npm test`: all 23 automated tests pass, including strict Groq tool serialization, required tool choice with SDK validation, URL-read protection, memory provenance/deletion, streaming, and ownership checks.
 - `npm run test:live -- --provider=compatible`: all live checks pass with `openai/gpt-oss-120b` on Groq and Tavily. This used real provider calls through an isolated production HTTP server and a disposable database, without mocks or changes to existing user conversations.
 
 ## Live evidence
