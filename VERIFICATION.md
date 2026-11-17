@@ -7,7 +7,7 @@ Checked 17 November 2026. Project: minimi.
 **PASS for the configured Groq + Tavily endpoint/integration suite.**
 
 - `npm run build`: TypeScript check and production frontend build pass.
-- `npm test`: all 21 automated tests pass, including strict Groq tool serialization, forced named tool choice, URL-read protection, memory provenance/deletion, streaming, and ownership checks.
+- `npm test`: all 23 automated tests pass, including strict Groq tool serialization, forced named tool choice, URL-read protection, memory provenance/deletion, streaming, and ownership checks.
 - `npm run test:live -- --provider=compatible`: all live checks pass with `openai/gpt-oss-120b` on Groq and Tavily. This used real provider calls through an isolated production HTTP server and a disposable database, without mocks or changes to existing user conversations.
 
 ## Live evidence
@@ -36,7 +36,7 @@ The live research follow-up took about 58 seconds. The app's default response de
 
 ## Scope and limits
 
-This confirms endpoint connectivity, streaming completion, persistence, search execution, memory extraction/recall, export, and cleanup for the recorded Groq configuration. It does not establish answer accuracy, citation quality, browser rendering, production deployment, or performance against market benchmarks. It is one successful complete live run after fixes, not a reliability or load-test claim.
+This confirms endpoint connectivity, streaming completion, persistence, search execution, memory extraction/recall, export, and cleanup for the recorded Groq configuration. It does not establish answer accuracy, citation quality, browser rendering or performance against market benchmarks. It is one successful complete live run after fixes, not a reliability or load-test claim.
 
 **GPT-6 Luna and Claude: live testing pending credentials.** No OpenAI or Anthropic API key is configured, and neither model was invoked. Their provider adapters are implemented; the Groq pass is not evidence of live Luna/Claude access.
 
@@ -51,3 +51,7 @@ npm run test:live -- --provider=compatible
 Use configured `COMPATIBLE_BASE_URL`, `COMPATIBLE_MODEL`, `COMPATIBLE_API_KEY`, and `TAVILY_API_KEY` in `.env`. Never include `.env` or the `data/` directory in a public submission. Real calls consume provider quota; the free-plan live suite takes several minutes due to deliberate pacing.
 
 Detailed reports: `test-results/live-compatible.md` and `.json` (ignored by Git). This summary is kept in the project for submission. The existing Luna command is `npm run test:luna`; it will report BLOCKED until an authorized OpenAI key is configured.
+
+## Hosted verification
+
+The project is deployed on Vercel with private Blob snapshot persistence. Hosted chat, memory, search, export, and cleanup were tested on 17 November 2026. See [DEPLOYMENT.md](DEPLOYMENT.md) for the exact deployed commit, access requirements, evidence, and build-log limitation.
