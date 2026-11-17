@@ -19,6 +19,7 @@
     "@ai-sdk/anthropic": "^4.0.105",
     "@ai-sdk/openai": "^4.0.118",
     "@ai-sdk/openai-compatible": "^3.0.92",
+    "@vercel/blob": "^2.9.0",
     "ai": "^7.0.173",
     "chrono-node": "^2.10.3",
     "cookie-parser": "^1.4.7",
@@ -43,5 +44,10 @@
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
+  },
+  "overrides": {
+    "@vercel/cli-config": {
+      "zod": "^4.6.7"
+    }
   }
 }

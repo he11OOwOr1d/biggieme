@@ -93,3 +93,19 @@ its model calls and background memory extraction do not compete for the free
 app uses strict search-tool arguments for Groq, validates allowed page URLs in
 application code, and uses low reasoning effort for GPT-OSS models. Rate limits
 still apply during ordinary use; the test does not increase the account quota.
+
+## Vercel deployment
+
+The Vercel entry point is `api/index.ts`. Hosted mode requires `STORAGE_MODE=blob`,
+a private Vercel Blob store, a stable random `SESSION_SECRET`, and `APP_ACCESS_TOKEN`.
+Provider and Tavily keys are server-side environment variables. Do not upload `.env`
+or `data/`. Local development continues to use the original local SQLite database.
+
+Hosted storage keeps one private SQLite snapshot per signed browser identity.
+Each request loads the latest snapshot into a disposable directory; mutations
+save it using an ETag precondition before reporting success. Competing writes are
+rejected rather than silently overwriting data. Memory extraction runs before the
+hosted completion event and snapshot save so it cannot be lost when a function
+freezes. This small-demo approach copies the user's database per request; it is
+not designed for large histories or high traffic. Use a managed database for that
+scale. Existing local conversations are not automatically uploaded.
