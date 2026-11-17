@@ -90,6 +90,11 @@ app.get('/api/messages/:id', (req, res) => {
   if (!row) return res.status(404).json({ error: 'Earlier message not found' });
   res.json({ ...row, sources: JSON.parse(row.sources) });
 });
+app.get('/api/messages/:id/trace', (req, res) => {
+  const trace = store.messageTrace(res.locals.user, req.params.id);
+  if (!trace) return res.status(404).json({ error: 'Trace not found' });
+  res.json(trace);
+});
 app.post('/api/sessions', async (_req, res) => { const session = store.create(res.locals.user); await save(res); res.json(session); });
 app.get('/api/sessions/:id/messages', (req, res) => {
   if (!store.owns(res.locals.user, req.params.id)) return res.status(404).json({ error: 'Conversation not found' });

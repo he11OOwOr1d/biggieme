@@ -51,9 +51,14 @@ test('HTTP app: signed sessions, access gate, real compatible adapter, streaming
   assert.equal(modelRequest.tools.length, 1); assert.equal(modelRequest.tools[0].function.name, 'web_search');
   const messages = await (await call('alice', `/sessions/${session.id}/messages`)).json();
   assert.equal(messages.length, 2); assert.equal(messages[1].status, 'complete');
+  const trace = await (await call('alice', `/messages/${messages[1].id}/trace`)).json();
+  assert.equal(trace.version, 1); assert.ok(trace.events.some((e: any) => e.stage === 'history'));
+  assert.ok(trace.events.some((e: any) => e.stage === 'answer'));
+  assert.equal((await call('bob', `/messages/${messages[1].id}/trace`)).status, 404);
   assert.equal((await call('bob', `/messages/${messages[0].id}`)).status, 404);
   assert.equal((await (await call('alice', `/messages/${messages[0].id}`)).json()).content, 'Hello');
   const exported = await (await call('alice', `/sessions/${session.id}/export`)).text(); assert.equal(exported.trim().split('\n').length, 2);
   assert.equal((await call('alice', `/sessions/${session.id}`, { method: 'DELETE' })).status, 200);
   assert.equal((await call('alice', `/sessions/${session.id}/messages`)).status, 404);
+  assert.equal((await call('alice', `/messages/${messages[1].id}/trace`)).status, 404);
 });

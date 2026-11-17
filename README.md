@@ -121,3 +121,18 @@ scale. Existing local conversations are not automatically uploaded.
 Groq uses a validated JSON research plan followed by a separate answer stream,
 rather than its unreliable native streaming tool-call protocol. The application
 still executes the same single search tool with bounded queries and page reads.
+
+## Conversation diagnostics
+
+History follow-ups resolve to the latest substantive answered turn, skipping
+preference acknowledgements and failed research. Variants such as “since we last
+talked” are covered. Context preserves up to 12,000 characters per retrieved
+message within a 16,000-character history budget, and records any truncation.
+
+Each new saved response has an owner-only `GET /api/messages/:id/trace` diagnostic
+with selected message IDs, context coverage, research planning, search/read counts,
+errors, and completion status. Traces survive hosted storage reloads and are
+deleted with their conversation. They do not include API keys or raw provider
+payloads. All-search failures return an explicit unverified response and do not
+become the next historical baseline. Passing endpoint tests confirms execution
+and retrieval, not the factual accuracy of every generated claim.

@@ -19,6 +19,18 @@ export function keywords(text: string): string[] {
   return [...new Set(terms)].slice(0, 18);
 }
 
+const referenceWords = new Set('anything something changed change changes update updates chat chats conversation conversations discussion discussions previous earlier prior happened new talk talked talking spoke spoken discuss discussed recap summary check time latest hi hello thanks'.split(' '));
+export function historyReference(query: string) {
+  return /\b(last|previous|earlier|prior)\s+(chat|conversation|discussion|time)\b|\b(?:we|i|you)\s+(?:last\s+(?:talked|spoke|chatted|discussed)|(?:talked|spoke|chatted)\s+last)\b/i.test(query);
+}
+function isPreferenceOrGreeting(text: string) {
+  return /^(?:hi|hello|hey|thanks|thank you)[!.\s]*$/i.test(text.trim())
+    || (/\b(?:remember|prefer|like)\b/i.test(text) && /\b(?:answers?|responses?|concise|precise|short|practical|tone|style)\b/i.test(text) && !/\b(?:compare|shortlist|pricing|cost|tools|vendors)\b/i.test(text));
+}
+function isBroadReference(text: string) {
+  return historyReference(text) && keywords(text).every(term => referenceWords.has(term));
+}
+
 export class Store {
   db: DatabaseSync;
   constructor(public directory: string) {
@@ -28,6 +40,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, timezone TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), title TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL, status TEXT NOT NULL, sources TEXT NOT NULL DEFAULT '[]');
+      CREATE TABLE IF NOT EXISTS message_traces(message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS messages_session_date ON messages(session_id, created_at);
       CREATE INDEX IF NOT EXISTS messages_date ON messages(created_at);
       CREATE TABLE IF NOT EXISTS facts(user_id TEXT NOT NULL REFERENCES users(id), key TEXT NOT NULL, value TEXT NOT NULL, quote TEXT NOT NULL, source_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE, updated_at TEXT NOT NULL, PRIMARY KEY(user_id,key));
@@ -104,8 +117,18 @@ export class Store {
     this.db.prepare('INSERT INTO forgotten VALUES(?,?,?) ON CONFLICT(user_id,key) DO UPDATE SET at=excluded.at').run(user, key, new Date().toISOString());
     this.db.prepare('DELETE FROM facts WHERE user_id=? AND key=?').run(user, key); this.projectProfile(user);
   }
+  saveTrace(user: string, messageId: string, trace: object) {
+    const owned = this.db.prepare('SELECT m.id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE m.id=? AND s.user_id=?').get(messageId, user);
+    if (!owned) throw new Error('Message not found');
+    this.db.prepare('INSERT OR REPLACE INTO message_traces VALUES(?,?)').run(messageId, JSON.stringify(trace));
+  }
+  messageTrace(user: string, messageId: string) {
+    const row = this.db.prepare('SELECT t.data FROM message_traces t JOIN messages m ON m.id=t.message_id JOIN sessions s ON s.id=m.session_id WHERE m.id=? AND s.user_id=?').get(messageId, user) as { data: string } | undefined;
+    return row ? JSON.parse(row.data) : undefined;
+  }
   retrieve(user: string, query: string, windows: DateWindow[], excludeId?: string) {
-    const terms = keywords(query);
+    const reference = historyReference(query);
+    const terms = keywords(query).filter(term => !reference || !referenceWords.has(term));
     let ids: string[] = [];
     const matchedDates: string[] = [];
     // Calendar lookup is independent of lexical match: "what did I ask" has no useful keyword.
@@ -120,40 +143,54 @@ export class Store {
       ids = (this.db.prepare(`SELECT m.id FROM message_fts JOIN messages m ON m.rowid=message_fts.rowid JOIN sessions s ON s.id=m.session_id WHERE message_fts MATCH ? AND s.user_id=? AND m.status='complete' AND m.id!=? ORDER BY bm25(message_fts) LIMIT 8`).all(terms.map(t => `"${t}"`).join(' OR '), user, excludeId || '') as { id: string }[]).map(r => r.id);
     }
     const hasStoredHistory = !!this.db.prepare("SELECT m.id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE s.user_id=? AND m.role='assistant' AND m.status='complete' AND m.id!=? LIMIT 1").get(user, excludeId || '');
-    const genericTerm = /^(anything|something|changed?|changes|updates?|chat|conversation|discussion|previous|earlier|prior|happened|new|talk|talked|discuss|discussed|recap|summary|check|hi|hello|thanks)$/;
-    const broadReference = /\b(last|previous|earlier|prior)\s+(chat|conversation|discussion)\b/i.test(query)
-      && terms.every(term => genericTerm.test(term));
-    // A broad reference has no topic words to match. Prefer the current thread
-    // if it has a completed answer, otherwise the user's latest completed chat.
-    // Never use failed/unfinished chats or another user's history as a baseline.
+    const broadReference = reference && terms.length === 0;
     let baselineSession: string | undefined;
+    let baselineQuestionId: string | undefined;
+    let baselineAnswerId: string | undefined;
+    let baselineAt: string | undefined;
+    let strategy = windows.length ? 'calendar' : 'lexical';
     if (!windows.length && broadReference) {
-      const current = excludeId ? this.db.prepare('SELECT session_id FROM messages WHERE id=?').get(excludeId) as { session_id: string } | undefined : undefined;
-      const earlierUserTurns = current ? this.db.prepare("SELECT content FROM messages WHERE session_id=? AND role='user' AND status='complete' AND id!=? ORDER BY rowid DESC LIMIT 6").all(current.session_id, excludeId || '') as { content: string }[] : [];
-      const currentHasTopic = earlierUserTurns.some(m => keywords(m.content).some(term => !genericTerm.test(term)));
-      const latest = this.db.prepare("SELECT m.session_id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE s.user_id=? AND m.role='assistant' AND m.status='complete' AND m.id!=? AND (m.session_id!=? OR ?) ORDER BY (m.session_id=?) DESC,m.created_at DESC,m.rowid DESC LIMIT 1").get(user, excludeId || '', current?.session_id || '', currentHasTopic ? 1 : 0, current?.session_id || '') as { session_id: string } | undefined;
-      if (latest) {
-        baselineSession = latest.session_id;
-        ids = (this.db.prepare("SELECT id FROM messages WHERE session_id=? AND status='complete' AND id!=? ORDER BY created_at DESC,rowid DESC LIMIT 6").all(latest.session_id, excludeId || '') as { id: string }[]).reverse().map(m => m.id);
-      }
+      const current = excludeId ? this.db.prepare('SELECT rowid,session_id FROM messages WHERE id=?').get(excludeId) as { rowid: number; session_id: string } | undefined : undefined;
+      const candidates = this.db.prepare(`SELECT u.id,u.content,u.session_id,a.id AS answer_id,a.created_at AS answered_at,a.content AS answer,a.sources
+        FROM messages u JOIN sessions s ON s.id=u.session_id
+        JOIN messages a ON a.rowid=(SELECT min(n.rowid) FROM messages n WHERE n.session_id=u.session_id AND n.rowid>u.rowid)
+        LEFT JOIN message_traces t ON t.message_id=a.id
+        WHERE COALESCE(json_extract(t.data,'$.outcome'),'answered')!='unverified' AND s.user_id=? AND u.role='user' AND u.status='complete' AND a.role='assistant' AND a.status='complete' AND u.id!=? AND u.rowid<?
+        ORDER BY (u.session_id=?) DESC,u.created_at DESC,u.rowid DESC LIMIT 100`).all(user, excludeId || '', current?.rowid || Number.MAX_SAFE_INTEGER, current?.session_id || '') as { id: string; content: string; session_id: string; answer_id: string; answered_at: string; answer: string; sources: string }[];
+      const baseline = candidates.find(c => !isPreferenceOrGreeting(c.content)
+        && (!isBroadReference(c.content) || JSON.parse(c.sources).length > 0)
+        && !/^(?:I(?:['’]m| am)? (?:not able|cannot|can['’]t)|I don['’]t have).{0,100}(?:earlier|previous|history|conversation)/i.test(c.answer));
+      strategy = baseline ? 'latest_answered_topic' : 'no_answered_topic';
+      if (baseline) {
+        baselineSession = baseline.session_id;
+        baselineQuestionId = baseline.id; baselineAnswerId = baseline.answer_id; baselineAt = baseline.answered_at;
+        // Retrieve the actual answered turn, not whichever messages happen to
+        // be at the end of its conversation after preference updates or retries.
+        ids = [baseline.id, baseline.answer_id];
+      } else ids = [];
     }
     const selected = new Map<string, Message>();
     for (const id of ids) {
       const hit = this.db.prepare('SELECT rowid,session_id FROM messages WHERE id=?').get(id) as any;
       if (!hit) continue;
+      if (baselineQuestionId && baselineAnswerId) {
+        const row = this.db.prepare('SELECT * FROM messages WHERE id=?').get(id) as any;
+        if (row) selected.set(row.id, { ...row, sources: JSON.parse(row.sources) });
+        continue;
+      }
       const before = this.db.prepare("SELECT * FROM messages WHERE session_id=? AND rowid<=? AND status='complete' AND id!=? ORDER BY rowid DESC LIMIT 2").all(hit.session_id, hit.rowid, excludeId || '') as any[];
       const after = this.db.prepare("SELECT * FROM messages WHERE session_id=? AND rowid>? AND status='complete' AND id!=? ORDER BY rowid LIMIT 2").all(hit.session_id, hit.rowid, excludeId || '') as any[];
       for (const row of [...before.reverse(), ...after]) selected.set(row.id, { ...row, sources: JSON.parse(row.sources) });
     }
     const all = [...selected.values()];
-    let budget = 14000;
+    let budget = 16000;
     const messages: Message[] = [];
     for (const m of all) {
       if (budget < 500) break;
-      const content = m.content.slice(0, Math.min(3500, budget));
+      const content = m.content.slice(0, Math.min(12000, budget));
       messages.push({ ...m, content }); budget -= content.length;
     }
-    return { messages, matchedDates, hasStoredHistory, baselineSession, truncated: all.length > messages.length || all.some(m => m.content.length > 3500) || ids.length >= 40, ambiguous: matchedDates.length > 1 };
+    return { messages, matchedDates, hasStoredHistory, baselineSession, baselineQuestionId, baselineAnswerId, baselineAt, strategy, originalCharacters: Object.fromEntries(all.map(m => [m.id, m.content.length])), truncated: all.length > messages.length || messages.some(m => m.content.length < (all.find(a => a.id === m.id)?.content.length || 0)) || ids.length >= 40, ambiguous: matchedDates.length > 1 };
   }
   jsonl(user: string, session: string) {
     const rows = this.messages(user, session);

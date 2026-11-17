@@ -18,8 +18,10 @@ test('private snapshots survive request teardown and conversation deletion remov
   const a = await openSnapshot(user, io); a.store.user(user, 'UTC');
   const chat = a.store.create(user); const message = a.store.add(user, chat.id, 'user', 'I prefer short practical answers.');
   a.store.saveFacts(user, [{ key: 'answer_style', value: 'Short practical answers', quote: 'short practical answers', source_id: message }]);
+  a.store.saveTrace(user, message, { events: [{ stage: 'history' }] });
   await a.save(); a.dispose();
   const b = await openSnapshot(user, io);
+  assert.equal(b.store.messageTrace(user, message).events[0].stage, 'history');
   assert.equal(b.store.messages(user, chat.id).length, 1); assert.equal(b.store.facts(user).length, 1);
   b.store.remove(user, chat.id); await b.save(); b.dispose();
   const c = await openSnapshot(user, io);

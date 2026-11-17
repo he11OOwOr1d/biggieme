@@ -13,10 +13,17 @@ export class SearchService {
   cache = new Map<string, { at: number; sources: Source[] }>();
   constructor(private apiKey: string, private request: Fetcher = fetch) {}
   async call(path: string, body: object, signal?: AbortSignal) {
-    const res = await this.request(`https://api.tavily.com/${path}`, {
+    const deadlineMs = path === 'search' ? 20_000 : 12_000;
+    const deadline = AbortSignal.timeout(deadlineMs);
+    let res: Response;
+    try { res = await this.request(`https://api.tavily.com/${path}`, {
       method: 'POST', headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
-    });
+      body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+    }); } catch (error) {
+      if (signal?.aborted) throw new Error('Web research was canceled.');
+      if (deadline.aborted) throw new Error(`Web ${path} timed out after ${deadlineMs / 1000} seconds.`);
+      throw error;
+    }
     if (!res.ok) throw new Error(`Web search returned ${res.status}.`);
     return await res.json() as any;
   }
