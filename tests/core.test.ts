@@ -185,3 +185,16 @@ test('last-chat references prefer current completed thread and preserve honest m
   const topic = s.retrieve('alice', 'What changed since our last chat about Kubernetes?', [], id);
   assert.equal(topic.baselineSession, undefined); assert.equal(topic.hasStoredHistory, true);
 });
+
+test('retrying a broad reference does not use the previous missing-history reply as its baseline', t => {
+  const s = fixture(t); const original = s.create('alice');
+  s.add('alice', original.id, 'user', 'Compare SQLite and Postgres.');
+  s.add('alice', original.id, 'assistant', 'SQLite is embedded; Postgres is a server.');
+  const current = s.create('alice');
+  s.add('alice', current.id, 'user', 'Has anything changed since our last chat?');
+  s.add('alice', current.id, 'assistant', 'I cannot find our previous conversation.');
+  const id = s.add('alice', current.id, 'user', 'Has anything changed since our last chat?');
+  const r = s.retrieve('alice', 'Has anything changed since our last chat?', [], id);
+  assert.equal(r.baselineSession, original.id);
+  assert.ok(r.messages.some(m => m.content.includes('Postgres')));
+});
