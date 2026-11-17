@@ -119,6 +119,21 @@ export class Store {
       // Scope before LIMIT, not after a global top-k. FTS syntax is generated, not user SQL.
       ids = (this.db.prepare(`SELECT m.id FROM message_fts JOIN messages m ON m.rowid=message_fts.rowid JOIN sessions s ON s.id=m.session_id WHERE message_fts MATCH ? AND s.user_id=? AND m.status='complete' AND m.id!=? ORDER BY bm25(message_fts) LIMIT 8`).all(terms.map(t => `"${t}"`).join(' OR '), user, excludeId || '') as { id: string }[]).map(r => r.id);
     }
+    const hasStoredHistory = !!this.db.prepare("SELECT m.id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE s.user_id=? AND m.role='assistant' AND m.status='complete' AND m.id!=? LIMIT 1").get(user, excludeId || '');
+    const broadReference = /\b(last|previous|earlier|prior)\s+(chat|conversation|discussion)\b/i.test(query)
+      && terms.every(term => /^(anything|something|changed?|changes|updates?|chat|conversation|discussion|previous|earlier|prior|happened|new)$/.test(term));
+    // A broad reference has no topic words to match. Prefer the current thread
+    // if it has a completed answer, otherwise the user's latest completed chat.
+    // Never use failed/unfinished chats or another user's history as a baseline.
+    let baselineSession: string | undefined;
+    if (!windows.length && broadReference) {
+      const current = excludeId ? this.db.prepare('SELECT session_id FROM messages WHERE id=?').get(excludeId) as { session_id: string } | undefined : undefined;
+      const latest = this.db.prepare("SELECT m.session_id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE s.user_id=? AND m.role='assistant' AND m.status='complete' AND m.id!=? ORDER BY (m.session_id=?) DESC,m.created_at DESC,m.rowid DESC LIMIT 1").get(user, excludeId || '', current?.session_id || '') as { session_id: string } | undefined;
+      if (latest) {
+        baselineSession = latest.session_id;
+        ids = (this.db.prepare("SELECT id FROM messages WHERE session_id=? AND status='complete' AND id!=? ORDER BY created_at DESC,rowid DESC LIMIT 6").all(latest.session_id, excludeId || '') as { id: string }[]).reverse().map(m => m.id);
+      }
+    }
     const selected = new Map<string, Message>();
     for (const id of ids) {
       const hit = this.db.prepare('SELECT rowid,session_id FROM messages WHERE id=?').get(id) as any;
@@ -135,7 +150,7 @@ export class Store {
       const content = m.content.slice(0, Math.min(3500, budget));
       messages.push({ ...m, content }); budget -= content.length;
     }
-    return { messages, matchedDates, truncated: all.length > messages.length || all.some(m => m.content.length > 3500) || ids.length >= 40, ambiguous: matchedDates.length > 1 };
+    return { messages, matchedDates, hasStoredHistory, baselineSession, truncated: all.length > messages.length || all.some(m => m.content.length > 3500) || ids.length >= 40, ambiguous: matchedDates.length > 1 };
   }
   jsonl(user: string, session: string) {
     const rows = this.messages(user, session);

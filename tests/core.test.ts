@@ -160,3 +160,28 @@ test('compact search evidence bounds model context while preserving full stored 
   assert.equal(result.sources[0].truncated, true);
   assert.equal(result.sources[0].url, stored[0].url);
 });
+
+test('broad last-chat follow-up retrieves the latest completed conversation without lexical overlap', t => {
+  const s = fixture(t); const earlier = s.create('alice');
+  s.add('alice', earlier.id, 'user', 'Compare Neon and Supabase hosting.', 'complete', [], '2026-11-14T10:00:00Z');
+  s.add('alice', earlier.id, 'assistant', 'Neon was the cheaper option for this workload.', 'complete', [], '2026-11-14T10:00:01Z');
+  const unrelated = s.create('bob'); s.add('bob', unrelated.id, 'assistant', 'Private newer answer.', 'complete', [], '2026-11-15T11:00:00Z');
+  const failed = s.create('alice'); s.add('alice', failed.id, 'assistant', 'Response could not be completed.', 'failed', [], '2026-11-15T12:00:00Z');
+  const current = s.create('alice'); const id = s.add('alice', current.id, 'user', 'Has anything changed since our last chat?');
+  const r = s.retrieve('alice', 'Has anything changed since our last chat?', [], id);
+  assert.equal(r.baselineSession, earlier.id); assert.equal(r.hasStoredHistory, true);
+  assert.ok(r.messages.some(m => /Neon/.test(m.content)));
+  assert.ok(r.messages.every(m => m.session_id === earlier.id));
+});
+test('last-chat references prefer current completed thread and preserve honest missing-history coverage', t => {
+  const s = fixture(t); const current = s.create('alice');
+  s.add('alice', current.id, 'user', 'Compare CRM pricing.'); s.add('alice', current.id, 'assistant', 'Our shortlist was HubSpot and Zoho.');
+  const other = s.create('alice'); s.add('alice', other.id, 'assistant', 'Unrelated later conversation.');
+  const id = s.add('alice', current.id, 'user', 'Has anything changed since our last chat?');
+  assert.equal(s.retrieve('alice', 'Has anything changed since our last chat?', [], id).baselineSession, current.id);
+  const empty = s.create('bob'); const first = s.add('bob', empty.id, 'user', 'Has anything changed since our last chat?');
+  const missing = s.retrieve('bob', 'Has anything changed since our last chat?', [], first);
+  assert.equal(missing.hasStoredHistory, false); assert.equal(missing.messages.length, 0);
+  const topic = s.retrieve('alice', 'What changed since our last chat about Kubernetes?', [], id);
+  assert.equal(topic.baselineSession, undefined); assert.equal(topic.hasStoredHistory, true);
+});
