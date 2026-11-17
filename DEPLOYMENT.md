@@ -7,9 +7,11 @@ GitHub: https://github.com/he11OOwOr1d/biggieme
 Deployed source commit: `c1b4e9d4221f6c061d81d2587cf13b59231753fd`.
 Runtime: Node 24, Mumbai (`bom1`).
 
-Vercel authentication remains enabled. The application also requires its demo
-access code. The code is stored only on the owner's computer in the ignored file
-`.vercel/deployment-access.txt`; it is not included in this repository.
+Vercel authentication remains enabled. The application demo access code is
+`JsEGIn6Z27LHoLSd` and is also published in the README for reviewers. Vercel sign-in or
+an access request may still be needed before reaching the app; this code unlocks
+only the application's demo gate. Provider API keys remain server-side and are
+not published.
 
 Model and search: Groq `openai/gpt-oss-120b` and Tavily. Keys are in Vercel environment
 variables, not frontend code or Git. GPT-6 Luna and Claude are not configured.

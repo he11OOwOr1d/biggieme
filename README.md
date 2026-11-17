@@ -2,6 +2,23 @@
 
 A small chat agent with one web-search tool, date-aware conversation recall, and a bounded user profile.
 
+## Live demo
+
+Open **[biggieme.vercel.app](https://biggieme.vercel.app)** and enter this demo access code:
+
+```text
+JsEGIn6Z27LHoLSd
+```
+
+The hosted demo uses Groq and Tavily; reviewers do not need to provide API keys.
+It shares the owner's provider quota, so a rate-limit message may require waiting
+before retrying.
+
+Vercel deployment protection is also enabled. If Vercel asks you to sign in or
+request access before the app opens, complete that step or contact the repository
+owner for deployment access. The demo code unlocks the app after Vercel access;
+it does not bypass Vercel's sign-in screen.
+
 ## Run
 
 Requires **Node 24+** (built-in SQLite), then:
