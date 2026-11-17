@@ -4,20 +4,11 @@ A small chat agent with one web-search tool, date-aware conversation recall, and
 
 ## Live demo
 
-Open **[biggieme.vercel.app](https://biggieme.vercel.app)** and enter this demo access code:
-
-```text
-JsEGIn6Z27LHoLSd
-```
+Open **[biggieme.vercel.app](https://biggieme.vercel.app)**. No demo access code is required.
 
 The hosted demo uses Groq and Tavily; reviewers do not need to provide API keys.
 It shares the owner's provider quota, so a rate-limit message may require waiting
-before retrying.
-
-Vercel deployment protection is also enabled. If Vercel asks you to sign in or
-request access before the app opens, complete that step or contact the repository
-owner for deployment access. The demo code unlocks the app after Vercel access;
-it does not bypass Vercel's sign-in screen.
+before retrying. Vercel deployment protection remains enabled separately.
 
 ## Run
 
@@ -114,7 +105,7 @@ still apply during ordinary use; the test does not increase the account quota.
 ## Vercel deployment
 
 The Vercel entry point is `api/index.ts`. Hosted mode requires `STORAGE_MODE=blob`,
-a private Vercel Blob store, a stable random `SESSION_SECRET`, and `APP_ACCESS_TOKEN`.
+a private Vercel Blob store and a stable random `SESSION_SECRET`.
 Provider and Tavily keys are server-side environment variables. Do not upload `.env`
 or `data/`. Local development continues to use the original local SQLite database.
 
